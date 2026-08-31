@@ -1,188 +1,160 @@
 # EDGE — Phase 1 Detailed Build Plan
 **Golden Path: Auth → Onboarding → Event → Registration → Attendance (Mode A) → Certificate**
 
-Starting point: empty folder `M:\sem3\PUMA\Edge\` with only a `docs\` subfolder containing `EDGE_PRD_v2.0.md` and `EDGE_SRS_v2.0.md`. No repo, no Next.js app, no Firebase project connected yet. This plan assumes exactly that starting point.
+Starting point: Next.js App Router workspace at `M:\sem3\PUMA\Edge\` configured with Supabase (Postgres, Auth, RLS) as primary database and Firebase (FCM only for push notifications).
 
 ---
 
-## STAGE 0 — Repo & Local Environment Setup (all manual)
+## STAGE 0 — Repo & Local Environment Setup
 
-Do these in order, in the VS Code terminal (PowerShell), from `M:\sem3\PUMA\Edge\`.
+Completed baseline setup:
 
-### 0.1 Install prerequisites (check first, install if missing)
-- Node.js (LTS version) — check with `node -v` in terminal. If not installed, get it from nodejs.org.
-- Git — check with `git -v`. If not installed, get it from git-scm.com.
-- GitHub CLI or just a GitHub account logged in via browser — either works for pushing the repo.
-- Firebase CLI — installed later via npm, not needed system-wide yet.
+### 0.1 Prerequisites
+- Node.js (LTS version) & npm
+- Git repository configured on `main` branch
+- Remote `origin` linked to `https://github.com/manav-Mnv/edge-web.git`
 
-### 0.2 Initialize Git
-- Run `git init` inside `M:\sem3\PUMA\Edge\` — this makes the whole Edge folder (docs included) one repo.
-- Create a `.gitignore` immediately (Next.js will add to this later, but start one now so you never accidentally commit `.env` files or `node_modules`).
-- Create the GitHub repo `edge-web` under your account (private, as already decided) — do this on github.com directly, don't initialize it with a README (avoids merge conflicts with your local init).
-- Connect local repo to GitHub remote and do an initial commit with just the `docs\` folder.
+### 0.2 Git Configuration
+- Comprehensive `.gitignore` protecting secrets (`.env*.local`, service account keys, certificates) while tracking `.env.example`.
 
-### 0.3 Scaffold Next.js app
-- From inside `M:\sem3\PUMA\Edge\`, run the Next.js create command targeting a subfolder (e.g. `app\` or directly at root — decide now: recommend scaffolding at root of the repo so `docs\` sits alongside `src\`, not nested inside the Next app).
-- When prompted, choose: TypeScript = Yes, ESLint = Yes, Tailwind CSS = Yes, App Router = Yes, import alias = default (`@/*`) is fine.
-- This generates `package.json`, `next.config`, `app\` directory, `public\`, and a starter `.gitignore` (merge with your earlier one if needed — make sure `.env*.local` is in there).
-- Run the dev server once to confirm it works before touching anything else — you should see the default Next.js page on localhost.
-- Commit this scaffold as its own commit ("Next.js app init") before adding any custom code — gives you a clean rollback point.
+### 0.3 Scaffold Next.js App
+- Next.js 16 (App Router, Turbopack, React 19, TypeScript, ESLint v9, Tailwind CSS v4) at project root (`src/app`, `@/*` alias).
 
-### 0.4 Firebase project setup (Firebase Console, browser — manual)
-- Go to Firebase Console, create project (or confirm existing one) — name it something like `edge-university`.
-- Confirm billing plan is **Spark** (free) — do not upgrade to Blaze, that was the old v1.0 SRS assumption and is no longer the plan.
-- Enable **Firestore Database** — choose production mode, pick region `asia-south1` (closest to India, lowest latency for your users).
-- Enable **Authentication** → Sign-in method → enable **Google** provider.
-- Enable **Cloud Messaging** (FCM) — just toggle it on, you won't wire push notifications until later phases.
-- Go to Project Settings → General → "Your apps" → add a **Web app** — this generates the public config object (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId). Copy all six values somewhere safe temporarily.
-- Go to Project Settings → Service Accounts → Generate new private key — this downloads a JSON file. **This file is secret.** Do not put it in the repo folder at all, keep it outside the project directory or immediately note its contents into your env setup and delete the file.
+### 0.4 Backend Services Setup
+- **Supabase Project** (Postgres, Auth, RLS) on free tier.
+- **Firebase Project** configured with **Cloud Messaging (FCM)** enabled only (no Firestore, no Firebase Auth).
 
-### 0.5 Environment variables (local)
-- In the Next.js app root, create `.env.local` (this file must already be gitignored — verify).
-- Add the six Firebase web config values, each prefixed `NEXT_PUBLIC_` since the browser needs to read them (e.g. `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, etc.)
-- Add the Admin SDK service account values WITHOUT the `NEXT_PUBLIC_` prefix (these stay server-only): the client_email, private_key, and project_id from the downloaded JSON. Note: the private_key has literal `\n` characters in it — when pasting into `.env.local` keep it as a single-line string with `\n` escapes intact, this trips people up.
-- Add one more var: `ALLOWED_EMAIL_DOMAIN=paruluniversity.ac.in` — so the domain check isn't hardcoded anywhere in your code.
+### 0.5 Environment Variables
+- `.env.example`: Public template with `ALLOWED_EMAIL_DOMAIN`, Supabase keys, Firebase client config, Firebase Admin private key, and QStash placeholders.
+- `.env.local`: Local instance for development (gitignored).
 
-### 0.6 Vercel setup (browser + terminal)
-- Push your current repo state to GitHub (`git push`).
-- Go to vercel.com, "Add New Project," import the `edge-web` GitHub repo.
-- Vercel auto-detects Next.js — accept defaults.
-- Before first deploy, go to Project Settings → Environment Variables in Vercel and paste in the exact same variables from `.env.local` — set them for Production, Preview, and Development environments all three.
-- Trigger the deploy. Confirm `edgeweb.vercel.app` (or whatever URL Vercel assigns) loads the default Next.js page.
-- From now on, every `git push` to main auto-deploys — this is your whole deployment pipeline for Phase 1, no manual deploy steps needed after this.
-
-### 0.7 Install Firebase SDK packages (terminal, inside the Next.js app)
-- Install the client Firebase SDK package (for browser-side auth/Firestore calls).
-- Install the Firebase Admin SDK package (for server-side verification in your API routes).
-- Create a small internal convention now (not code, just a decision): one file initializes the client SDK using the `NEXT_PUBLIC_` vars, and a separate file initializes the Admin SDK using the server-only vars — these must never be imported into each other's context (client file never touches Admin credentials, Admin file never runs in a browser bundle).
-
-**End of Stage 0 checkpoint:** empty repo → live Next.js app on Vercel, Firebase project provisioned, all secrets in place, nothing custom built yet. This is your true foundation line.
+### 0.6 SDK Modules Architecture
+- `src/lib/utils.ts`: Tailwind CSS class merge helper `cn()`.
+- `src/lib/constants.ts`: Allowed domain and role constants.
+- `src/lib/supabase/client.ts`: Browser Supabase client (`createBrowserClient`).
+- `src/lib/supabase/server.ts`: Server-side SSR Supabase client (`createServerClient` with cookies).
+- `src/lib/firebase/client.ts`: Client-side Firebase app & messaging.
+- `src/lib/firebase/admin.ts`: Server-side Firebase Admin SDK (FCM push only).
 
 ---
 
-## STAGE 1 — Domain Verification (the gatekeeper)
+## STAGE 1 — Domain Verification & Auth Callback (the gatekeeper)
 
-**Goal:** No user is treated as "real" until their email is confirmed to end in the Parul domain, verified server-side (never trust the client alone).
+**Goal:** No user is treated as "real" until their email is confirmed to end in the Parul domain (`paruluniversity.ac.in`), verified server-side.
 
 **Logic:**
-- This lives as a Route Handler (App Router's server-side API endpoint), not a page.
-- Client signs in with Google via Firebase Auth in the browser → gets back a Firebase ID token.
-- Client sends that ID token to your route handler.
-- The route handler uses the Admin SDK to **verify the token server-side** — this confirms the token is genuine and not spoofed, and extracts the real email from it.
-- Check the extracted email's domain against `ALLOWED_EMAIL_DOMAIN`.
-- Pass → respond success, client proceeds.
-- Fail → respond rejection, client immediately signs the user out of Firebase Auth client-side and shows a specific message ("Please use your Parul University email to sign in").
-- Never do this check purely in the browser — a client-side-only check can be bypassed by anyone with dev tools open.
-
-**Manual step:** none beyond what Stage 0 already set up — this is pure logic to build, no external service configuration needed.
+- **OAuth Callback Route Handler** (`src/app/auth/callback/route.ts`):
+  - Handles the redirect from Supabase Google OAuth with the auth `code`.
+  - Exchanges code for session server-side (`supabase.auth.exchangeCodeForSession(code)`).
+  - Extracts the authenticated user's email.
+  - Checks the email domain against `ALLOWED_EMAIL_DOMAIN` (`paruluniversity.ac.in`).
+  - **Pass**: Check `users` table. If profile is new/incomplete, redirect to `/onboarding`; if complete, redirect to `/dashboard`.
+  - **Domain check failure / timeout (Fail Open per SRS Section 7.6)**: Flag `needs_manual_review: true` in `users` table and allow entry without blocking legitimate students during technical hiccups.
+  - **Explicit Non-Parul email rejection**: Sign out and redirect to `/login?error=invalid_domain`.
+- **Next.js Middleware** (`src/middleware.ts`):
+  - Refreshes Supabase session tokens on incoming requests.
+  - Protects authenticated routes (`/dashboard`, `/events/create`, `/tickets`, `/onboarding`).
 
 ---
 
 ## STAGE 2 — Auth Flow (Path A: verified Parul email only)
 
-**Manual (Google Cloud Console, linked to your Firebase project):**
-- Configure the OAuth consent screen (support email, app name) if not already prompted through Firebase's own flow.
-- In Firebase Auth settings → Authorized domains, add `edgeweb.vercel.app` and `localhost` (localhost is usually there by default).
+**Setup:**
+- In Google Cloud Console / Supabase Dashboard: Configure Google OAuth credentials (Client ID, Secret, and Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`).
+- In Supabase Auth Settings: Enable Google Provider.
 
 **Logic to build:**
-- Sign-in page: one "Continue with Google" button. No email/password option in Phase 1.
-- On successful Google sign-in client-side → immediately call Stage 1's verify route.
-- On pass, check Firestore for an existing `users/{uid}` document:
-  - Doesn't exist → redirect to onboarding (Stage 3).
-  - Exists → redirect to dashboard/home.
-- Let Firebase Auth's own client-side persistence handle "staying logged in" — don't build custom cookies/sessions for Phase 1, that's unnecessary complexity right now.
-- New user Firestore doc gets `role: student` by default. Promoting someone to AD/Faculty/Club Lead is a **manual edit directly in the Firestore Console** for now — no admin UI for role assignment yet. This is intentional; building a role-management UI is not golden-path-critical.
+- Sign-in page (`/login`): Clean, branded interface with "Continue with Google" button.
+- Initiates Supabase OAuth: `supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: ... } })`.
+- On successful OAuth return, callback route handler runs Stage 1 domain check and checks `users` table:
+  - Record missing or onboarding incomplete → redirect to `/onboarding` (Stage 3).
+  - Record complete → redirect to `/dashboard`.
+- Role assignment: New user record gets `role: 'student'` by default. Promoting a user to AD or Faculty for testing is done via **direct edit in the Supabase Table Editor** for Phase 1.
 
 ---
 
-## STAGE 3 — Onboarding (Screens 1 & 2 only)
-
-**Manual:**
-- Write a plain placeholder list of ~10–15 real Parul Institutes and Courses (pull from the university website) — don't wait for an "official complete list," a working placeholder unblocks the build.
+## STAGE 3 — Onboarding (Screens 1, 2, & 4)
 
 **Logic to build:**
-- Screen 1: Name (auto-filled from Google profile, editable), PU Mail (auto-filled, read-only/locked), Enrollment/UG Number (manual text entry).
-- Screen 2: Institute (dropdown from your placeholder list), Course (dropdown), Year & Semester (dropdown), Mobile Number (required text input), Personal Email (required text input).
-- On submit: write one Firestore document to `users/{uid}` containing all collected fields plus `role: "student"`, `verified: true`, `createdAt: <timestamp>`.
-- Skip Screens 3 (interests/club suggestions) and 4 (photo/notification toggle) entirely — go straight to the dashboard after Screen 2 submits.
+- **Screen 1 (The Basics)**: Name (prefilled from Google, editable), PU Email (read-only identity anchor), Enrollment / UG Number (manual input).
+- **Screen 2 (Academic & Campus Profile)**: Institute (dropdown), Course (dropdown), Year & Semester (dropdown), Mobile Number (required), Personal Email (required), Residence (Hosteller/Day Scholar pill toggle).
+- **Screen 4 (Final Touches — optional/skippable)**: Profile photo preview, Notification toggle.
+- On submit: Write to Supabase `users` table:
+  - `id` (references auth.users.id)
+  - `email`, `full_name`, `enrollment_no`, `institute`, `course`, `year_sem`, `mobile`, `personal_email`, `residence`
+  - `role`: `'student'`
+  - `verification_status`: `'verified'`
+  - `needs_manual_review`: `false`
+  - `created_at`: `now()`
+- Redirect directly to `/dashboard`.
 
 ---
 
 ## STAGE 4 — Event Creation (AD/Faculty auto-verified path only)
 
-**Manual:**
-- In Firestore Console, manually edit your own test user's document to set `role: "AD"` (or `"faculty"`) so you can test the creation flow.
-
 **Logic to build:**
-- "Create Event" page, gated so only users with role AD or faculty see/can access it (check client-side for UI, but the real enforcement is Firestore Security Rules below — never rely on hiding a button as your only security).
-- Form fields: Title, Description, Date & Time, Venue, Capacity, one Tag (single select from a small fixed list — skip multi-tag selection for now).
-- On submit: write to an `events` collection with `status: "verified"` set automatically (no approval object/workflow needed yet, since Club Lead's approval loop is out of scope for Phase 1).
-- Store `createdBy: <uid>` and `createdByRole` on the event document — needed later for scoping/visibility rules.
+- Create Event page (`/events/create`), gated to users with `role IN ('ad', 'faculty')`.
+- Form fields: Title, Description, Date & Time, Venue, Capacity, Tag (single select from fixed list).
+- On submit: Insert row into Supabase `events` table:
+  - `id`, `title`, `description`, `event_date`, `venue`, `capacity`, `tag`
+  - `creator_id` (auth.uid()), `creator_role`
+  - `status`: `'verified'` (auto-verified on creation for AD/Faculty)
+  - `created_at`: `now()`
 
-**Firestore Security Rules (write these now, not later — this is the actual security layer):**
-- Only authenticated users whose Firestore user doc has role `AD` or `faculty` can create documents in `events`.
-- Any authenticated, verified user can read from `events`.
-- Users can only write to their own `users/{uid}` document, never someone else's.
-- Draft these rules in the Firebase Console's Rules editor, test them there before relying on them in the app.
+**Supabase Row-Level Security (RLS) Policies (Phase 1 Baseline):**
+- `events`: `SELECT` allowed for all authenticated users; `INSERT` allowed only where requesting user's `role IN ('ad', 'faculty')`.
+- `users`: `SELECT` and `UPDATE` allowed for own record (`auth.uid() = id`).
 
 ---
 
 ## STAGE 5 — Event Discovery & Registration (Open access only)
 
 **Logic to build:**
-- Events list page: query the `events` collection, render as cards (Title, Date, Venue, spots remaining vs. capacity).
-- Event detail page: full event info plus a Register button.
-- Registration logic on click:
-  - Count current registrations for that event.
-  - Under capacity → create a registration record with `eventId`, `userId`, `status: "registered"`, `timestamp`.
-  - At/over capacity → same record but `status: "waitlisted"`.
-- Skip entirely for Phase 1: Invite-Only events, the overlapping-event soft warning, waitlist auto-promotion notifications. Every Phase 1 event is Open access, no invite logic.
+- **Events List Page** (`/events` or `/dashboard`): Query published `events` table, render event cards (Title, Date, Venue, Spots remaining).
+- **Event Detail Page** (`/events/[id]`): Full event description, organizer details, and Register button.
+- **Registration Action**:
+  - Insert row into Supabase `registrations` table:
+    - `id`, `event_id`, `user_id`, `status: 'registered'`, `created_at: now()`
+  - Enforce unique constraint on `(event_id, user_id)` to prevent duplicate registrations.
 
 ---
 
 ## STAGE 6 — Attendance (Mode A only — organizer-scanned)
 
-**Manual (decide on paper before building either side):**
-- Lock your QR payload format now: what data actually gets encoded (recommend `userId + eventId`, structured so it's parseable, e.g. a simple delimited string or JSON string). This decision affects both ticket generation and scanning, so fix it before writing either piece.
+**Logic to build:**
+- **My Tickets Screen** (`/tickets` or `/events/[id]/ticket`): Student-facing screen rendering a QR code containing encoded `userId + eventId`.
+- **Organizer Scanner Screen** (`/events/[id]/scan`): AD/Faculty view using device camera (via HTML5 QR scanner) to scan student QR codes.
+- **Scan Validation & Write**:
+  - Decode `userId + eventId`.
+  - Check `attendance` table for existing `(event_id, user_id)` pair.
+  - If present: Show "Already marked present".
+  - If not present: Insert row into `attendance` table (`event_id`, `user_id`, `registration_id`, `check_in_mode: 'mode_a'`, `timestamp: now()`).
+
+---
+
+## STAGE 7 — Certificate Issuance (manual trigger, standard template)
 
 **Logic to build:**
-- "My Tickets" screen (student-facing): generates a QR code client-side from the student's own registration data, using a standard QR-generation library (not a custom implementation).
-- Organizer scanner screen (AD/Faculty view): uses the device camera to scan a QR, decodes it back into `userId + eventId`.
-- On a successful scan:
-  - Check if an attendance record already exists for that exact `userId + eventId` pair.
-  - Doesn't exist → create one: `status: "present"`, `timestamp`.
-  - Already exists → show "already marked present" — do not create a duplicate record.
-- No queue/jitter/QStash system needed here — that's explicitly Mode B / Phase 2 territory, since Mode A is a single scanner doing sequential scans at pilot scale, not 1000 concurrent writes.
+- On event admin view: "Mark Complete" button visible only to event creator or AD.
+- On click:
+  - Update `events` row: `completed_at = now()`, `completed_by = auth.uid()`.
+  - Query all `attendance` records for the event.
+  - For each attendee, generate standard certificate record in `certificates` table (`attendance_id`, `student_name`, `event_title`, `event_date`, `issued_at: now()`).
+  - Student can view/download certificate from their dashboard or event page.
 
 ---
 
-## STAGE 7 — Certificate Issuance (manual trigger, one static template)
-
-**Manual:**
-- Design a single static certificate layout (logo placeholder, name field position, event name, date) — a design/asset task, hand off to your UI/UX teammate if useful. Doesn't need to be fancy for Phase 1, just functional and on-brand.
-
-**Logic to build:**
-- On an event's admin view, a "Mark Complete" button, visible only to that event's creator or an AD (role + ownership check).
-- On click: query all attendance records for that event where `status: "present"`, loop through them, generate one certificate per student with their name filled into the template.
-- For Phase 1, a direct-download response for each generated certificate is enough to prove the pipeline — don't build Google Drive auto-upload yet if it adds friction, that can follow once the core loop is proven.
-- Skip for Phase 1: the verification QR code embedded on the certificate itself, automatic re-issue on name correction, and per-event custom templates. All correctly Phase 2+.
+## Explicitly OUT of Phase 1
+Club Lead approval workflow · Temporary UG-number signup path (Path B) · Invite-only events · Waitlist auto-promotion · Mode B self-scan + QStash queue · Google Sheets sync · Push notifications · Recurring events · Post-event feedback forms · Multi-tag selection · Onboarding Screen 3 (Clubs/Interests)
 
 ---
 
-## Explicitly OUT of Phase 1 (do not let these creep back in)
-Club Lead approval workflow · Temporary UG-number signup path · Invite-only events · Waitlist auto-promotion + notification · Mode B self-scan + QStash queue · Google Sheets sync · Push notifications · Recurring events · Post-event feedback forms · Multi-tag selection · Onboarding Screens 3 & 4
-
-Every one of these is real, documented scope — just correctly sequenced into Phase 2 or Phase 3. Resist pulling them forward; the entire point of Phase 1 is proving the thin end-to-end loop works before adding breadth.
-
----
-
-## Suggested Build Order Recap (fastest path to a working demo)
-1. Stage 0 — foundation (repo, Next.js, Firebase, Vercel, env vars)
-2. Stage 1 + 2 together — domain check + Google auth (they're tightly coupled)
-3. Stage 3 — onboarding
-4. Stage 4 — event creation + security rules
-5. Stage 5 — discovery + registration
-6. Stage 6 — attendance Mode A
-7. Stage 7 — certificate generation
-
-Each stage should end with something you can actually click through in the browser before moving to the next — don't build two stages in parallel without testing the first.
+## Suggested Build Order Recap
+1. Stage 0 — Foundation (repo, Next.js, Supabase & Firebase SDKs, env vars, log setup) ✅
+2. Stage 1 — Domain check & Auth callback handler
+3. Stage 2 — Google Auth sign-in page & session flow
+4. Stage 3 — Onboarding (Screens 1, 2, 4) & `users` profile insertion
+5. Stage 4 — Event creation + basic RLS policies
+6. Stage 5 — Discovery & registration (`events`, `registrations`)
+7. Stage 6 — Attendance Mode A (QR ticket generation & camera scan)
+8. Stage 7 — Event completion & certificate generation
