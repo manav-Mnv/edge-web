@@ -50,3 +50,61 @@ Scope is strictly bounded to **Stage 0 only**.
 - **Status:** COMPLETED
 
 ---
+
+### Step 0.3: Next.js Application Scaffolding
+- **Timestamp:** 2026-08-31T01:22:25+05:30
+- **Action:** Bootstrapped Next.js application at repository root with full App Router and modern web tooling.
+- **Details:**
+  - Framework: Next.js 16.3.3 (Turbopack, React 19)
+  - Features enabled: TypeScript, ESLint (v9), Tailwind CSS (v4), App Router (`src/app`), `@/*` path alias.
+  - Initialized clean `.gitignore` to strictly allow `.env.example` while ignoring all private `.env*.local` and service account keys.
+- **Status:** COMPLETED
+
+---
+
+### Step 0.4: Dependency Installation (Supabase, Firebase, UI Utilities)
+- **Timestamp:** 2026-08-31T01:25:24+05:30
+- **Action:** Installed required backend SDKs and styling helpers for client & server tiers.
+- **Packages Installed:**
+  - `@supabase/supabase-js` (^2.112.4), `@supabase/ssr` (^0.12.5)
+  - `firebase` (^12.18.0), `firebase-admin` (^14.3.0)
+  - `lucide-react` (^1.37.0), `clsx` (^2.1.1), `tailwind-merge` (^3.6.0)
+- **Status:** COMPLETED
+
+---
+
+### Step 0.5: Environment Variables & Security Isolation
+- **Timestamp:** 2026-08-31T01:25:48+05:30
+- **Action:** Created environment templates and local configuration structure.
+- **Files Created:**
+  - `.env.example`: Public documentation of all required keys (Domain, Supabase, Firebase Client/Admin, QStash).
+  - `.env.local`: Local placeholder config (strictly excluded from Git tracking).
+  - Variables configured: `ALLOWED_EMAIL_DOMAIN`, `NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_FIREBASE_*`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `QSTASH_*`.
+- **Status:** COMPLETED
+
+---
+
+### Step 0.6: Isolated SDK Modules Architecture
+- **Timestamp:** 2026-08-31T01:26:25+05:30
+- **Action:** Implemented decoupled client and server SDK initialization modules to prevent secret leakage in browser bundles.
+- **Modules Created:**
+  - `src/lib/utils.ts`: Utility function `cn()` combining `clsx` and `tailwind-merge`.
+  - `src/lib/constants.ts`: System domain (`paruluniversity.ac.in`) and role constants.
+  - `src/lib/supabase/client.ts`: Client-side browser Supabase instance (`createBrowserClient`).
+  - `src/lib/supabase/server.ts`: Server-side SSR Supabase instance (`createServerClient` with App Router cookie store).
+  - `src/lib/firebase/client.ts`: Client-side Firebase app & messaging initialization (`getMessaging`).
+  - `src/lib/firebase/admin.ts`: Server-side Firebase Admin SDK (`cert` credentials, `getAuth`, `getMessaging`).
+- **Status:** COMPLETED
+
+---
+
+### Step 0.7: Build & Lint Validation Checkpoint
+- **Timestamp:** 2026-08-31T01:27:04+05:30
+- **Action:** Executed validation suite across the entire codebase.
+- **Results:**
+  - `npm run build`: Production compilation and TypeScript validation succeeded with 0 errors.
+  - `npm run lint`: ESLint check passed with 0 warnings/errors.
+  - Dev server verified locally on `http://localhost:3000`.
+- **Status:** COMPLETED — STAGE 0 FULLY ACCOMPLISHED
+
+---
